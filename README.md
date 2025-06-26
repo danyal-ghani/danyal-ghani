@@ -1,16 +1,21 @@
-## Hi there 👋
+# 👋 Hi, I'm [Your Name] — Full Stack Dev & CMS Pro
 
-<!--
-**danyal-ghani/danyal-ghani** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
+I'm a Full-Stack Developer with 10+ years of experience turning ideas into scalable, high-performing digital products. I specialize in modern web development frameworks, CMS systems, and cloud-native solutions.
 
-Here are some ideas to get you started:
+### 🔧 My Tech Stack
+- **Frontend**: React.js, Angular, Vue.js
+- **Backend**: Node.js
+- **CMS**: WordPress, Shopify, Webflow, Squarespace
+- **Databases**: MySQL, PostgreSQL, MongoDB, Firebase
+- **DevOps & Cloud**: AWS, Azure, GCP, Serverless
+- **APIs**: REST, GraphQL
 
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
+### 📊 GitHub Stats
+<p align="center">
+  <img src="https://github-readme-stats.vercel.app/api?username=your-username&show_icons=true&theme=radical" />
+  <img src="https://github-readme-streak-stats.herokuapp.com/?user=your-username&theme=radical" />
+</p>
+
+---
+
+🚀 Let's build something amazing together!
