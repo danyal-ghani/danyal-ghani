@@ -1,4 +1,4 @@
-# 👋 Hi, I'm [Your Name] — Full Stack Dev & CMS Pro
+# 👋 Hi, I'm Danyal G. — Full Stack Dev & CMS Pro
 
 I'm a Full-Stack Developer with 10+ years of experience turning ideas into scalable, high-performing digital products. I specialize in modern web development frameworks, CMS systems, and cloud-native solutions.
 
