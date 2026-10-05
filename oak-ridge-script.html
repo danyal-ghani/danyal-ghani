@@ -7,15 +7,24 @@
      (2 nights: $860 − $129 + $250 + $73.10 + $25.00 = $1,079.10)
      ========================================================= */
   var PRICING = {
-    nightly: 430,          // Lodgify default nightly rate
-    cleaning: 250,         // Lodgify cleaning fee
-    discountRate: 0.15,    // "High rated guest discount" (15% of lodging); set 0 if not applied
+    nightly: 430,          /* Lodgify default nightly rate */
+    cleaning: 250,         /* Lodgify cleaning fee */
+    discountRate: 0.15,    /* "High rated guest discount" (15% of lodging); set 0 if not applied */
     discountLabel: "High rated guest discount",
-    taxRate: 0.10,         // Accommodations Tax (Nevada), charged on lodging and cleaning separately
+    taxRate: 0.10,         /* Accommodations Tax (Nevada), charged on lodging and cleaning separately */
     taxLabel: "Accommodations Tax (Nevada)",
-    // Dates whose Lodgify rate differs from the default (weekend / season): "YYYY-MM-DD": rate
+    /* Dates whose Lodgify rate differs from the default (weekend / season): "YYYY-MM-DD": rate */
     rateOverrides: {}
   };
+
+  /* =========================================================
+     BOOKED DATES — copy from the Lodgify calendar.
+     Each entry is [check-in, check-out] of an existing booking.
+     The check-out day stays free for a new check-in.
+     ========================================================= */
+  var BOOKED = [
+    ["2026-10-09", "2026-10-11"]
+  ];
 
   /* ---------- helpers ---------- */
   function $(id) { return document.getElementById(id); }
@@ -234,6 +243,24 @@
   var persistMeta = document.querySelector(".persist div");
   var rangeStart = null;
   var rangeEnd = null;
+  var notice = "";
+
+  /* Booked nights: every date from check-in up to (not including) check-out */
+  var bookedNights = {};
+  each(BOOKED, function (b) {
+    var d = parseYmd(b[0]);
+    var end = b[1];
+    while (ymd(d) < end) { bookedNights[ymd(d)] = true; d.setDate(d.getDate() + 1); }
+  });
+  function isBooked(iso) { return bookedNights[iso] === true; }
+  function rangeIsFree(start, end) {
+    var d = parseYmd(start);
+    while (ymd(d) < end) {
+      if (isBooked(ymd(d))) return false;
+      d.setDate(d.getDate() + 1);
+    }
+    return true;
+  }
 
   function rateFor(iso) {
     return Object.prototype.hasOwnProperty.call(PRICING.rateOverrides, iso) ? PRICING.rateOverrides[iso] : PRICING.nightly;
@@ -282,7 +309,10 @@
         el.classList.remove("is-on");
         el.innerHTML = "";
       });
-      if (calPricing) { calPricing.classList.remove("is-on"); calPricing.innerHTML = ""; }
+      if (calPricing) {
+        calPricing.classList.toggle("is-on", !!notice);
+        calPricing.innerHTML = notice ? "<strong>" + notice + "</strong>" : "";
+      }
       if (bookPrice) bookPrice.innerHTML = "Add dates for prices <span>· total shown before payment</span>";
       if (persistMeta) persistMeta.innerHTML = "<strong>Oak Ridge</strong><span>Select dates for total</span>";
       return;
@@ -326,14 +356,21 @@
     var daysInMonth = new Date(y, m + 1, 0).getDate();
     var label = monthDate.toLocaleString("en-US", { month: "long", year: "numeric" });
     var days = "";
+    var pickingCheckout = !!(rangeStart && !rangeEnd);
     var i;
     for (i = 0; i < firstDow; i++) days += '<button type="button" class="cal__day is-empty" disabled="disabled"></button>';
     for (i = 1; i <= daysInMonth; i++) {
       var iso = y + "-" + pad(m + 1) + "-" + pad(i);
       var cls = "cal__day";
+      var disabled = iso < todayIso;
+      if (isBooked(iso)) cls += " is-booked";
       if (iso === rangeStart || iso === rangeEnd) cls += " is-selected";
       else if (rangeStart && rangeEnd && iso > rangeStart && iso < rangeEnd) cls += " is-in-range";
-      days += '<button type="button" class="' + cls + '" data-date="' + iso + '"' + (iso < todayIso ? ' disabled="disabled"' : "") + ">" + i + "</button>";
+      if (!disabled) {
+        if (pickingCheckout && iso > rangeStart) disabled = !rangeIsFree(rangeStart, iso);
+        else disabled = isBooked(iso);
+      }
+      days += '<button type="button" class="' + cls + '" data-date="' + iso + '"' + (disabled ? ' disabled="disabled"' : "") + ">" + i + "</button>";
     }
     return '<div class="cal__month"><h3>' + label + '</h3><div class="cal__grid">' + DOW + days + "</div></div>";
   }
@@ -342,11 +379,12 @@
     if (root) root.innerHTML = renderMonth(viewMonth) + renderMonth(addMonths(viewMonth, 1));
   }
 
-  // One delegated listener instead of one per day button
+  /* One delegated listener instead of one per day button */
   on(root, "click", function (e) {
     var btn = e.target.closest ? e.target.closest(".cal__day[data-date]") : null;
     if (!btn || btn.disabled) return;
     var iso = btn.getAttribute("data-date");
+    notice = "";
     if (!rangeStart || rangeEnd || iso <= rangeStart) {
       rangeStart = iso;
       rangeEnd = null;
@@ -371,20 +409,32 @@
     renderCal();
   }
 
+  function validateRange() {
+    notice = "";
+    if (rangeStart && isBooked(rangeStart)) {
+      notice = "Check-in date is already booked. Please choose other dates.";
+      rangeStart = rangeEnd = null;
+    } else if (rangeStart && rangeEnd && rangeEnd <= rangeStart) {
+      rangeEnd = null;
+    } else if (rangeStart && rangeEnd && !rangeIsFree(rangeStart, rangeEnd)) {
+      notice = "These dates include booked nights. Please choose other dates.";
+      rangeEnd = null;
+    }
+  }
   function setArrival(val) {
     rangeStart = val || null;
-    if (rangeStart && rangeEnd && rangeEnd <= rangeStart) rangeEnd = null;
+    validateRange();
     update();
   }
   function setDeparture(val) {
     rangeEnd = val || null;
-    if (rangeStart && rangeEnd && rangeEnd <= rangeStart) rangeEnd = null;
+    validateRange();
     update();
   }
 
   each(arrivalInputs, function (el) { on(el, "change", function () { setArrival(el.value); }); });
   each(departureInputs, function (el) { on(el, "change", function () { setDeparture(el.value); }); });
-  on($("clear-dates"), "click", function () { rangeStart = rangeEnd = null; update(); });
+  on($("clear-dates"), "click", function () { rangeStart = rangeEnd = null; notice = ""; update(); });
 
   on(guests, "change", function () { if (mGuests) mGuests.value = guests.value; });
   on(mGuests, "change", function () { if (guests) guests.value = mGuests.value; });
