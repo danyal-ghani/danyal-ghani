@@ -1,0 +1,412 @@
+<script>
+(function () {
+  "use strict";
+
+  /* =========================================================
+     PRICING CONFIG — matched to Lodgify quote #21692833
+     (2 nights: $860 − $129 + $250 + $73.10 + $25.00 = $1,079.10)
+     ========================================================= */
+  var PRICING = {
+    nightly: 430,          // Lodgify default nightly rate
+    cleaning: 250,         // Lodgify cleaning fee
+    discountRate: 0.15,    // "High rated guest discount" (15% of lodging); set 0 if not applied
+    discountLabel: "High rated guest discount",
+    taxRate: 0.10,         // Accommodations Tax (Nevada), charged on lodging and cleaning separately
+    taxLabel: "Accommodations Tax (Nevada)",
+    // Dates whose Lodgify rate differs from the default (weekend / season): "YYYY-MM-DD": rate
+    rateOverrides: {}
+  };
+
+  /* ---------- helpers ---------- */
+  function $(id) { return document.getElementById(id); }
+  function on(el, ev, fn) { if (el) el.addEventListener(ev, fn); }
+  function each(list, fn) { for (var i = 0; i < list.length; i++) fn(list[i], i); }
+  function pad(n) { return n < 10 ? "0" + n : String(n); }
+  function round2(n) { return Math.round(n * 100) / 100; }
+  function escAttr(s) { return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
+  var moneyFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  function money(n) { return moneyFmt.format(n); }
+  function plural(n, word) { return n + " " + word + (n === 1 ? "" : "s"); }
+  function ymd(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function parseYmd(s) { var p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function nightsBetween(a, b) { return Math.round((parseYmd(b) - parseYmd(a)) / 86400000); }
+
+  /* ---------- photos (collected once) ---------- */
+  var PHOTOS = [];
+  (function () {
+    var seen = {};
+    each(document.querySelectorAll("#oak-ridge img"), function (img) {
+      if (img.closest && img.closest(".host-photos")) return;
+      var src = img.getAttribute("src") || "";
+      if (!src || seen[src]) return;
+      seen[src] = true;
+      PHOTOS.push({ src: src, alt: img.getAttribute("alt") || "Oak Ridge photo" });
+    });
+  })();
+
+  /* ---------- about: show more ---------- */
+  var about = $("about-copy");
+  var aboutToggle = $("about-toggle");
+  if (about && aboutToggle) {
+    on(aboutToggle, "click", function () {
+      var open = about.classList.toggle("is-open");
+      aboutToggle.setAttribute("aria-expanded", String(open));
+      aboutToggle.textContent = open ? "Show less" : "Show more";
+    });
+  }
+
+  /* ---------- icons ---------- */
+  var SVG = '<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.6">';
+  var ICO_PATHS = {
+    bath: '<path d="M8 20c0-6 4-10 8-10s8 4 8 10"/><path d="M10 24h12"/><path d="M6 20h20"/>',
+    hair: '<path d="M10 8h8a4 4 0 0 1 0 8h-2l4 8"/><path d="M10 8v8"/>',
+    bottle: '<path d="M13 4h6v4l2 3v15a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2V11l2-3V4Z"/>',
+    drop: '<path d="M16 4c6 8 10 12 10 17a10 10 0 1 1-20 0c0-5 4-9 10-17Z"/>',
+    washer: '<path d="M8 22h16M10 22V12h12v10"/><path d="M12 16h8"/>',
+    dryer: '<path d="M8 22h16M10 22V12h12v10"/><circle cx="16" cy="17" r="3"/>',
+    towel: '<path d="M8 8h12a4 4 0 0 1 0 8H10v10"/><path d="M10 12h8"/>',
+    hanger: '<path d="M16 8a2 2 0 1 1 2 2l-10 8h20"/>',
+    bed: '<path d="M4 18h24v6H4z"/><path d="M6 18V12h8v6"/><path d="M4 24v2M28 24v2"/>',
+    iron: '<path d="M6 20h18l2-6H10l-4 6Z"/><path d="M8 22h14"/>',
+    closet: '<rect x="7" y="6" width="18" height="22" rx="1"/><path d="M16 6v22M13 16h.01"/>',
+    tv: '<rect x="4" y="8" width="24" height="14" rx="2"/><path d="M12 26h8M16 22v4"/>',
+    book: '<path d="M7 6h10a4 4 0 0 1 4 4v16H11a4 4 0 0 0-4 4V6Z"/><path d="M21 6h4v20"/>',
+    eth: '<rect x="6" y="10" width="20" height="12" rx="2"/><path d="M10 22v4M22 22v4M14 16h4"/>',
+    crib: '<path d="M6 22V10h20v12"/><path d="M6 14h20M10 10v12M16 10v12M22 10v12"/>',
+    game: '<rect x="5" y="10" width="22" height="12" rx="4"/><path d="M11 16h4M13 14v4M20 15h.01M23 17h.01"/>',
+    ac: '<path d="M6 18h20M8 18V10h16v8"/><path d="M12 22h8"/>',
+    fire: '<path d="M16 26c5-4 8-7 8-12a8 8 0 1 0-16 0c0 5 3 8 8 12Z"/>',
+    heat: '<path d="M10 8c0 6 4 8 4 12a2 2 0 1 1-4 0c0-4 4-6 4-12"/><path d="M18 8c0 6 4 8 4 12a2 2 0 1 1-4 0c0-4 4-6 4-12"/>',
+    fan: '<circle cx="16" cy="16" r="3"/><path d="M16 6c4 2 6 5 6 8M16 26c-4-2-6-5-6-8M6 16c2-4 5-6 8-6M26 16c-2 4-5 6-8 6"/>',
+    cam: '<circle cx="16" cy="12" r="4"/><path d="M8 26c1-5 4-8 8-8s7 3 8 8"/>',
+    alarm: '<path d="M16 6a8 8 0 0 1 8 8v5l2 3H6l2-3v-5a8 8 0 0 1 8-8Z"/><path d="M13 25a3 3 0 0 0 6 0"/>',
+    extinguish: '<path d="M12 10h6l2 16H10l2-16Z"/><path d="M14 10V6h6l4 3"/>',
+    aid: '<rect x="6" y="10" width="20" height="14" rx="2"/><path d="M16 14v6M13 17h6"/>',
+    wifi: '<path d="M6 14c5.5-5 14.5-5 20 0M10 18c3.5-3 8.5-3 12 0"/><circle cx="16" cy="23" r="1.5" fill="currentColor"/>',
+    desk: '<rect x="6" y="10" width="20" height="14" rx="2"/><path d="M10 10V8a6 6 0 0 1 12 0v2"/>',
+    kitchen: '<path d="M4 14h24v12H4zM6 14l2-6h16l2 6M10 20h.01M16 20h.01M22 20h.01"/>',
+    fridge: '<rect x="9" y="4" width="14" height="24" rx="2"/><path d="M9 14h14M12 8v3M12 18v3"/>',
+    micro: '<rect x="4" y="8" width="24" height="16" rx="2"/><rect x="8" y="12" width="12" height="8" rx="1"/><circle cx="24" cy="16" r="1.5"/>',
+    pot: '<path d="M6 14h20l-2 12H8L6 14Z"/><path d="M10 14V10h12v4M4 14h24"/>',
+    dishes: '<circle cx="12" cy="16" r="6"/><circle cx="20" cy="16" r="6"/>',
+    dishwasher: '<rect x="7" y="5" width="18" height="22" rx="2"/><path d="M7 11h18M12 16h8M12 20h8"/>',
+    stove: '<rect x="6" y="6" width="20" height="20" rx="2"/><circle cx="12" cy="13" r="2.5"/><circle cx="20" cy="13" r="2.5"/><circle cx="12" cy="21" r="2.5"/><circle cx="20" cy="21" r="2.5"/>',
+    kettle: '<path d="M8 14h12l2 10H8l0-10Z"/><path d="M20 16h4a2 2 0 0 1 0 4h-2"/><path d="M12 10h6"/>',
+    coffee: '<path d="M8 12h14v8a4 4 0 0 1-4 4h-6a4 4 0 0 1-4-4v-8Z"/><path d="M22 14h2a3 3 0 0 1 0 6h-2"/><path d="M10 26h12"/>',
+    wine: '<path d="M11 6h10l-2 10a5 5 0 1 1-6 0L11 6Z"/><path d="M16 21v5M12 26h8"/>',
+    toaster: '<rect x="5" y="12" width="22" height="12" rx="2"/><path d="M10 12V9h4v3M18 12V9h4v3"/>',
+    blender: '<path d="M11 6h10l-2 12H13L11 6Z"/><rect x="10" y="18" width="12" height="8" rx="1"/>',
+    table: '<path d="M4 14h24"/><path d="M8 14v10M24 14v10M12 14v4M20 14v4"/>',
+    door: '<rect x="9" y="4" width="14" height="24" rx="1"/><circle cx="19" cy="16" r="1.2" fill="currentColor"/>',
+    laundry: '<rect x="6" y="6" width="20" height="20" rx="2"/><circle cx="16" cy="17" r="5"/><circle cx="11" cy="10" r="1" fill="currentColor"/>',
+    patio: '<path d="M4 18h24M6 18V10l10-5 10 5v8"/><path d="M10 22h12"/>',
+    yard: '<path d="M4 20h24v6H4z"/><path d="M6 20l10-10 10 10"/>',
+    chair: '<path d="M8 14h16v6H8z"/><path d="M10 20v6M22 20v6M10 14V10h12v4"/>',
+    bbq: '<path d="M8 22c4-3 6-6 6-9a4 4 0 1 0-8 0c0 3 2 6 6 9Z"/><path d="M6 24h8M18 14h8v8H18z"/>',
+    car: '<path d="M5 18l3-6h16l3 6v6H5v-6Z"/><circle cx="10" cy="24" r="2"/><circle cx="22" cy="24" r="2"/>',
+    ev: '<path d="M8 20h16v6H8zM10 20l1-4h10l1 4"/><path d="M14 12v4M18 12v4"/>',
+    home: '<path d="M6 24V12l10-7 10 7v12H6Z"/>',
+    calendar: '<rect x="5" y="8" width="22" height="18" rx="2"/><path d="M5 14h22M11 5v6M21 5v6"/>',
+    lock: '<rect x="8" y="14" width="16" height="12" rx="2"/><path d="M12 14v-3a4 4 0 0 1 8 0v3"/><circle cx="16" cy="20" r="1.5" fill="currentColor"/>',
+    soap: '<rect x="9" y="12" width="14" height="14" rx="3"/><path d="M14 12V8h4v4"/>',
+    sheet: '<rect x="6" y="8" width="20" height="16" rx="1"/><path d="M6 14h20"/>',
+    forest: '<path d="M16 26V14"/><path d="M16 6l8 12H8l8-12Z"/><path d="M16 12l6 10H10l6-10Z"/>',
+    delivery: '<rect x="4" y="12" width="16" height="10" rx="1"/><path d="M20 16h5l3 4v2h-8v-6Z"/><circle cx="10" cy="24" r="2"/><circle cx="24" cy="24" r="2"/>'
+  };
+  function icon(name) { return SVG + (ICO_PATHS[name] || ICO_PATHS.home) + "</svg>"; }
+
+  /* ---------- amenities ---------- */
+  var AMENITIES_FULL = [
+    { title: "Bathroom", items: [["bath","Bathtub"],["hair","Hair dryer"],["soap","Cleaning products"],["bottle","Shampoo"],["bottle","Conditioner"],["soap","Body soap"],["drop","Hot water"]] },
+    { title: "Bedroom and laundry", items: [["washer","Free washer – In unit"],["dryer","Free dryer – In unit"],["towel","Essentials"],["hanger","Hangers"],["bed","Bed linens"],["bed","Extra pillows and blankets"],["iron","Iron"],["closet","Clothing storage"]] },
+    { title: "Entertainment", items: [["eth","Ethernet connection"],["tv","TV"],["book","Books and reading material"]] },
+    { title: "Family", items: [["crib","Pack n play / Travel crib"],["game","Board games"]] },
+    { title: "Heating and cooling", items: [["ac","Central air conditioning"],["fire","Indoor fireplace: wood-burning"],["heat","Heating"],["fan","Ceiling fan"]] },
+    { title: "Home safety", items: [["cam","Exterior security cameras on property"],["alarm","Smoke alarm"],["alarm","Carbon monoxide alarm"],["extinguish","Fire extinguisher"],["aid","First aid kit"]] },
+    { title: "Internet and office", items: [["wifi","Wifi · fiber"],["desk","Dedicated workspace"]] },
+    { title: "Kitchen and dining", items: [["kitchen","Kitchen"],["fridge","Refrigerator"],["micro","Microwave"],["pot","Cooking basics"],["dishes","Dishes and silverware"],["fridge","Freezer"],["dishwasher","Dishwasher"],["stove","Stove"],["stove","Oven"],["kettle","Hot water kettle"],["coffee","Coffee maker"],["wine","Wine glasses"],["toaster","Toaster"],["sheet","Baking sheet"],["blender","Blender"],["table","Dining table"]] },
+    { title: "Location features", items: [["door","Private entrance"],["laundry","Laundromat nearby"],["forest","Forest views"]] },
+    { title: "Outdoor", items: [["patio","Private patio or balcony"],["yard","Private backyard – Fully fenced"],["chair","Outdoor furniture"],["table","Outdoor dining area"],["bbq","BBQ grill"],["fire","Fire pit"]] },
+    { title: "Parking and facilities", items: [["car","Free parking on premises"],["ev","EV charger – level 2"]] },
+    { title: "Services", items: [["calendar","Long term stays allowed"],["lock","Self check-in"],["lock","Smart lock"],["delivery","DoorDash and Instacart delivery"]] }
+  ];
+
+  var amenitiesModal = $("amenities-modal");
+  var amenitiesBody = $("amenities-modal-body");
+  var amToggle = $("amenities-toggle");
+  var amenitiesRendered = false;
+  var amenityCount = 0;
+  each(AMENITIES_FULL, function (cat) { amenityCount += cat.items.length; });
+
+  function renderAmenitiesModal() {
+    if (!amenitiesBody || amenitiesRendered) return;
+    var html = "";
+    each(AMENITIES_FULL, function (cat) {
+      html += '<div class="am-cat"><h4>' + cat.title + "</h4>";
+      each(cat.items, function (it) {
+        html += '<div class="am-item">' + icon(it[0]) + "<span>" + it[1] + "</span></div>";
+      });
+      html += "</div>";
+    });
+    amenitiesBody.innerHTML = html;
+    amenitiesRendered = true;
+  }
+  function openAmenities() {
+    if (!amenitiesModal) return;
+    renderAmenitiesModal();
+    amenitiesModal.classList.add("is-open");
+  }
+  function closeAmenities() { if (amenitiesModal) amenitiesModal.classList.remove("is-open"); }
+
+  if (amToggle) {
+    amToggle.textContent = "Show all " + amenityCount + " amenities";
+    on(amToggle, "click", openAmenities);
+  }
+  on($("close-amenities"), "click", closeAmenities);
+  on(amenitiesModal, "click", function (e) { if (e.target === amenitiesModal) closeAmenities(); });
+
+  /* ---------- sleeping arrangements slider ---------- */
+  var track = $("sleep-track");
+  var prev = $("sleep-prev");
+  var next = $("sleep-next");
+  var page = $("sleep-page");
+  var sleepIndex = 0;
+  var mqMobile = window.matchMedia("(max-width: 640px)");
+  var mqTablet = window.matchMedia("(max-width: 980px)");
+
+  function cards() { return track ? track.querySelectorAll(".sleep-card") : []; }
+  function perPage() { return mqMobile.matches ? 1 : 2; }
+  function maxIndex() { return Math.max(0, cards().length - perPage()); }
+  function updateSleep() {
+    var list = cards();
+    if (!track || !list.length) return;
+    sleepIndex = Math.min(sleepIndex, maxIndex());
+    var w = list[0].getBoundingClientRect().width + 16;
+    track.style.transform = "translateX(-" + (sleepIndex * w) + "px)";
+    if (page) page.textContent = (sleepIndex + 1) + " / " + (maxIndex() + 1);
+    if (prev) prev.disabled = sleepIndex <= 0;
+    if (next) next.disabled = sleepIndex >= maxIndex();
+  }
+  on(prev, "click", function () { sleepIndex = Math.max(0, sleepIndex - 1); updateSleep(); });
+  on(next, "click", function () { sleepIndex = Math.min(maxIndex(), sleepIndex + 1); updateSleep(); });
+
+  var resizeQueued = false;
+  window.addEventListener("resize", function () {
+    if (resizeQueued) return;
+    resizeQueued = true;
+    window.requestAnimationFrame(function () { resizeQueued = false; updateSleep(); });
+  }, { passive: true });
+  updateSleep();
+
+  /* ---------- photo lightbox ---------- */
+  var lightbox = $("lightbox");
+  var grid = $("lightbox-grid");
+  var lightboxRendered = false;
+  function openLightbox() {
+    if (!lightbox || !grid) return;
+    if (!lightboxRendered) {
+      var html = "";
+      each(PHOTOS, function (p) {
+        html += '<img src="' + escAttr(p.src) + '" alt="' + escAttr(p.alt) + '" loading="lazy" decoding="async" />';
+      });
+      grid.innerHTML = html;
+      lightboxRendered = true;
+    }
+    lightbox.classList.add("is-open");
+  }
+  function closeLightbox() { if (lightbox) lightbox.classList.remove("is-open"); }
+  each(document.querySelectorAll("[data-open-gallery]"), function (el) { on(el, "click", openLightbox); });
+  on($("lightbox-close"), "click", closeLightbox);
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { closeLightbox(); closeAmenities(); }
+  });
+
+  /* ---------- booking: dates, guests, pricing ---------- */
+  var arrivalInputs = [$("arrival"), $("m-arrival")];
+  var departureInputs = [$("departure"), $("m-departure")];
+  var guests = $("guests");
+  var mGuests = $("m-guests");
+  var root = $("calendar-root");
+  var calPricing = $("cal-pricing");
+  var priceTargets = [$("price-box"), $("price-box-mobile")];
+  var bookPrice = document.querySelector(".book-rail .book-card__price");
+  var persistMeta = document.querySelector(".persist div");
+  var rangeStart = null;
+  var rangeEnd = null;
+
+  function rateFor(iso) {
+    return Object.prototype.hasOwnProperty.call(PRICING.rateOverrides, iso) ? PRICING.rateOverrides[iso] : PRICING.nightly;
+  }
+
+  function calc() {
+    if (!rangeStart || !rangeEnd) return null;
+    var nights = nightsBetween(rangeStart, rangeEnd);
+    if (nights < 1) return null;
+
+    var lodging = 0;
+    var d = parseYmd(rangeStart);
+    for (var n = 0; n < nights; n++) {
+      lodging += rateFor(ymd(d));
+      d.setDate(d.getDate() + 1);
+    }
+    lodging = round2(lodging);
+
+    var discount = round2(lodging * PRICING.discountRate);
+    var lodgingTax = round2((lodging - discount) * PRICING.taxRate);
+    var cleaningTax = round2(PRICING.cleaning * PRICING.taxRate);
+    var total = round2(lodging - discount + PRICING.cleaning + lodgingTax + cleaningTax);
+
+    return {
+      nights: nights,
+      nightly: round2(lodging / nights),
+      lodging: lodging,
+      discount: discount,
+      cleaning: PRICING.cleaning,
+      lodgingTax: lodgingTax,
+      cleaningTax: cleaningTax,
+      total: total
+    };
+  }
+
+  function row(label, value, cls) {
+    return "<div" + (cls ? ' class="' + cls + '"' : "") + "><dt>" + label + "</dt><dd>" + value + "</dd></div>";
+  }
+
+  function renderPriceBoxes() {
+    var c = calc();
+
+    if (!c) {
+      each(priceTargets, function (el) {
+        if (!el) return;
+        el.classList.remove("is-on");
+        el.innerHTML = "";
+      });
+      if (calPricing) { calPricing.classList.remove("is-on"); calPricing.innerHTML = ""; }
+      if (bookPrice) bookPrice.innerHTML = "Add dates for prices <span>· total shown before payment</span>";
+      if (persistMeta) persistMeta.innerHTML = "<strong>Oak Ridge</strong><span>Select dates for total</span>";
+      return;
+    }
+
+    var nightsLabel = plural(c.nights, "night");
+    var html = "<dl>" +
+      row(money(c.nightly) + " × " + nightsLabel, money(c.lodging)) +
+      (c.discount > 0 ? row(PRICING.discountLabel, "-" + money(c.discount)) : "") +
+      row("Cleaning fee", money(c.cleaning)) +
+      row(PRICING.taxLabel, money(c.lodgingTax)) +
+      row(PRICING.taxLabel, money(c.cleaningTax)) +
+      row("Total", money(c.total), "total") +
+      "</dl><p class=\"hint\">Lodgify checkout shows the final bookable total with live rates before payment.</p>";
+
+    each(priceTargets, function (el) {
+      if (!el) return;
+      el.classList.add("is-on");
+      el.innerHTML = html;
+    });
+    if (calPricing) {
+      calPricing.classList.add("is-on");
+      calPricing.innerHTML = "<strong>" + money(c.total) + " total</strong> for " + nightsLabel + " · " + money(c.nightly) + " / night";
+    }
+    if (bookPrice) bookPrice.innerHTML = money(c.nightly) + " <span>night · " + money(c.total) + " total</span>";
+    if (persistMeta) persistMeta.innerHTML = '<strong class="is-price">' + money(c.total) + "</strong><span>" + nightsLabel + "</span>";
+  }
+
+  /* ---------- calendar ---------- */
+  var today = new Date(); today.setHours(0, 0, 0, 0);
+  var todayIso = ymd(today);
+  var viewMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  var DOW = '<span class="cal__dow">S</span><span class="cal__dow">M</span><span class="cal__dow">T</span><span class="cal__dow">W</span><span class="cal__dow">T</span><span class="cal__dow">F</span><span class="cal__dow">S</span>';
+
+  function addMonths(d, n) { return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+
+  function renderMonth(monthDate) {
+    var y = monthDate.getFullYear();
+    var m = monthDate.getMonth();
+    var firstDow = new Date(y, m, 1).getDay();
+    var daysInMonth = new Date(y, m + 1, 0).getDate();
+    var label = monthDate.toLocaleString("en-US", { month: "long", year: "numeric" });
+    var days = "";
+    var i;
+    for (i = 0; i < firstDow; i++) days += '<button type="button" class="cal__day is-empty" disabled="disabled"></button>';
+    for (i = 1; i <= daysInMonth; i++) {
+      var iso = y + "-" + pad(m + 1) + "-" + pad(i);
+      var cls = "cal__day";
+      if (iso === rangeStart || iso === rangeEnd) cls += " is-selected";
+      else if (rangeStart && rangeEnd && iso > rangeStart && iso < rangeEnd) cls += " is-in-range";
+      days += '<button type="button" class="' + cls + '" data-date="' + iso + '"' + (iso < todayIso ? ' disabled="disabled"' : "") + ">" + i + "</button>";
+    }
+    return '<div class="cal__month"><h3>' + label + '</h3><div class="cal__grid">' + DOW + days + "</div></div>";
+  }
+
+  function renderCal() {
+    if (root) root.innerHTML = renderMonth(viewMonth) + renderMonth(addMonths(viewMonth, 1));
+  }
+
+  // One delegated listener instead of one per day button
+  on(root, "click", function (e) {
+    var btn = e.target.closest ? e.target.closest(".cal__day[data-date]") : null;
+    if (!btn || btn.disabled) return;
+    var iso = btn.getAttribute("data-date");
+    if (!rangeStart || rangeEnd || iso <= rangeStart) {
+      rangeStart = iso;
+      rangeEnd = null;
+    } else {
+      rangeEnd = iso;
+    }
+    update();
+  });
+
+  function syncInputs() {
+    each(arrivalInputs, function (el) { if (el) el.value = rangeStart || ""; });
+    each(departureInputs, function (el) {
+      if (!el) return;
+      el.value = rangeEnd || "";
+      if (rangeStart) el.min = rangeStart;
+    });
+  }
+
+  function update() {
+    syncInputs();
+    renderPriceBoxes();
+    renderCal();
+  }
+
+  function setArrival(val) {
+    rangeStart = val || null;
+    if (rangeStart && rangeEnd && rangeEnd <= rangeStart) rangeEnd = null;
+    update();
+  }
+  function setDeparture(val) {
+    rangeEnd = val || null;
+    if (rangeStart && rangeEnd && rangeEnd <= rangeStart) rangeEnd = null;
+    update();
+  }
+
+  each(arrivalInputs, function (el) { on(el, "change", function () { setArrival(el.value); }); });
+  each(departureInputs, function (el) { on(el, "change", function () { setDeparture(el.value); }); });
+  on($("clear-dates"), "click", function () { rangeStart = rangeEnd = null; update(); });
+
+  on(guests, "change", function () { if (mGuests) mGuests.value = guests.value; });
+  on(mGuests, "change", function () { if (guests) guests.value = mGuests.value; });
+
+  update();
+
+  /* ---------- scroll links ---------- */
+  each(document.querySelectorAll('a[href="#calendar"]'), function (a) {
+    on(a, "click", function (e) {
+      var el = $("calendar");
+      if (!el) return;
+      e.preventDefault();
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  on($("persist-book"), "click", function (e) {
+    if (!mqTablet.matches) return;
+    var mb = $("mobile-book");
+    if (!mb) return;
+    e.preventDefault();
+    mb.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+})();
+</script>
