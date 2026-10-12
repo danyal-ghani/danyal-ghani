@@ -272,6 +272,11 @@ html, body {
   overflow: visible !important;
   padding: 0 !important;
 }
+/* .layout shares its element with .wrap; keep the same side gutters as every other section */
+#oak-ridge .wrap.layout {
+  padding-left: clamp(20px, 4.5vw, 48px) !important;
+  padding-right: clamp(20px, 4.5vw, 48px) !important;
+}
 #oak-ridge .main-col { min-width: 0 !important; overflow: visible !important; }
 #oak-ridge .book-rail {
   display: block !important;
@@ -764,7 +769,7 @@ html, body {
 
 @media (max-width: 480px) {
 #oak-ridge .band--white {
-    padding: 50px 20px !important;
+    padding: 50px 0 !important;
 }
 }
   </style>
@@ -1090,6 +1095,7 @@ html, body {
      (2 nights: $860 − $129 + $250 + $73.10 + $25.00 = $1,079.10)
      ========================================================= */
   var PRICING = {
+    showEstimate: false,   /* false = no price estimate on the page; Lodgify checkout shows the exact total */
     nightly: 430,          /* Lodgify default nightly rate */
     cleaning: 250,         /* Lodgify cleaning fee */
     discountRate: 0.15,    /* "High rated guest discount" (15% of lodging); set 0 if not applied */
@@ -1231,10 +1237,176 @@ html, body {
   each(AMENITIES_FULL, function (cat) { amenityCount += cat.items.length; });
 
   function renderAmenitiesModal() {
+    if (!amenitiesBody || amenitiesRendered) return;
+    var html = "";
+    each(AMENITIES_FULL, function (cat) {
+      html += '<div class="am-cat"><h4>' + cat.title + "</h4>";
+      each(cat.items, function (it) {
+        html += '<div class="am-item">' + icon(it[0]) + "<span>" + it[1] + "</span></div>";
+      });
+      html += "</div>";
+    });
+    amenitiesBody.innerHTML = html;
+    amenitiesRendered = true;
+  }
+  function openAmenities() {
+    if (!amenitiesModal) return;
+    renderAmenitiesModal();
+    amenitiesModal.classList.add("is-open");
+  }
+  function closeAmenities() { if (amenitiesModal) amenitiesModal.classList.remove("is-open"); }
+
+  if (amToggle) {
+    amToggle.textContent = "Show all " + amenityCount + " amenities";
+    on(amToggle, "click", openAmenities);
+  }
+  on($("close-amenities"), "click", closeAmenities);
+  on(amenitiesModal, "click", function (e) { if (e.target === amenitiesModal) closeAmenities(); });
+
+  /* ---------- sleeping arrangements slider ---------- */
+  var track = $("sleep-track");
+  var prev = $("sleep-prev");
+  var next = $("sleep-next");
+  var page = $("sleep-page");
+  var sleepIndex = 0;
+  var mqMobile = window.matchMedia("(max-width: 640px)");
+  var mqTablet = window.matchMedia("(max-width: 980px)");
+
+  function cards() { return track ? track.querySelectorAll(".sleep-card") : []; }
+  function perPage() { return mqMobile.matches ? 1 : 2; }
+  function maxIndex() { return Math.max(0, cards().length - perPage()); }
+  function updateSleep() {
+    var list = cards();
+    if (!track || !list.length) return;
+    sleepIndex = Math.min(sleepIndex, maxIndex());
+    var w = list[0].getBoundingClientRect().width + 16;
+    track.style.transform = "translateX(-" + (sleepIndex * w) + "px)";
+    if (page) page.textContent = (sleepIndex + 1) + " / " + (maxIndex() + 1);
+    if (prev) prev.disabled = sleepIndex <= 0;
+    if (next) next.disabled = sleepIndex >= maxIndex();
+  }
+  on(prev, "click", function () { sleepIndex = Math.max(0, sleepIndex - 1); updateSleep(); });
+  on(next, "click", function () { sleepIndex = Math.min(maxIndex(), sleepIndex + 1); updateSleep(); });
+
+  var resizeQueued = false;
+  window.addEventListener("resize", function () {
+    if (resizeQueued) return;
+    resizeQueued = true;
+    window.requestAnimationFrame(function () { resizeQueued = false; updateSleep(); });
+  }, { passive: true });
+  updateSleep();
+
+  /* ---------- photo lightbox ---------- */
+  var lightbox = $("lightbox");
+  var grid = $("lightbox-grid");
+  var lightboxRendered = false;
+  function openLightbox() {
+    if (!lightbox || !grid) return;
+    if (!lightboxRendered) {
+      var html = "";
+      each(PHOTOS, function (p) {
+        html += '<img src="' + escAttr(p.src) + '" alt="' + escAttr(p.alt) + '" loading="lazy" decoding="async" />';
+      });
+      grid.innerHTML = html;
+      lightboxRendered = true;
+    }
+    lightbox.classList.add("is-open");
+  }
+  function closeLightbox() { if (lightbox) lightbox.classList.remove("is-open"); }
+  each(document.querySelectorAll("[data-open-gallery]"), function (el) { on(el, "click", openLightbox); });
+  on($("lightbox-close"), "click", closeLightbox);
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { closeLightbox(); closeAmenities(); }
+  });
+
+  /* ---------- booking: dates, guests, pricing ---------- */
+  var arrivalInputs = [$("arrival"), $("m-arrival")];
+  var departureInputs = [$("departure"), $("m-departure")];
+  var guests = $("guests");
+  var mGuests = $("m-guests");
+  var root = $("calendar-root");
+  var calPricing = $("cal-pricing");
+  var priceTargets = [$("price-box"), $("price-box-mobile")];
+  var bookPrice = document.querySelector(".book-rail .book-card__price");
+  var persistMeta = document.querySelector(".persist div");
+  var rangeStart = null;
+  var rangeEnd = null;
+  var notice = "";
+
+  /* Booked nights: every date from check-in up to (not including) check-out */
+  var bookedNights = {};
+  each(BOOKED, function (b) {
+    var d = parseYmd(b[0]);
+    var end = b[1];
+    while (ymd(d) < end) { bookedNights[ymd(d)] = true; d.setDate(d.getDate() + 1); }
+  });
+  function isBooked(iso) { return bookedNights[iso] === true; }
+  function rangeIsFree(start, end) {
+    var d = parseYmd(start);
+    while (ymd(d) < end) {
+      if (isBooked(ymd(d))) return false;
+      d.setDate(d.getDate() + 1);
+    }
+    return true;
+  }
+
+  function rateFor(iso) {
+    return Object.prototype.hasOwnProperty.call(PRICING.rateOverrides, iso) ? PRICING.rateOverrides[iso] : PRICING.nightly;
+  }
+
+  function calc() {
+    if (!rangeStart || !rangeEnd) return null;
+    var nights = nightsBetween(rangeStart, rangeEnd);
+    if (nights < 1) return null;
+
+    var lodging = 0;
+    var d = parseYmd(rangeStart);
+    for (var n = 0; n < nights; n++) {
+      lodging += rateFor(ymd(d));
+      d.setDate(d.getDate() + 1);
+    }
+    lodging = round2(lodging);
+
+    var discount = round2(lodging * PRICING.discountRate);
+    var lodgingTax = round2((lodging - discount) * PRICING.taxRate);
+    var cleaningTax = round2(PRICING.cleaning * PRICING.taxRate);
+    var total = round2(lodging - discount + PRICING.cleaning + lodgingTax + cleaningTax);
+
+    return {
+      nights: nights,
+      nightly: round2(lodging / nights),
+      lodging: lodging,
+      discount: discount,
+      cleaning: PRICING.cleaning,
+      lodgingTax: lodgingTax,
+      cleaningTax: cleaningTax,
+      total: total
+    };
+  }
+
+  function row(label, value, cls) {
+    return "<div" + (cls ? ' class="' + cls + '"' : "") + "><dt>" + label + "</dt><dd>" + value + "</dd></div>";
   }
 
   function renderPriceBoxes() {
     var c = calc();
+
+    if (c && !PRICING.showEstimate) {
+      each(priceTargets, function (el) {
+        if (!el) return;
+        el.classList.remove("is-on");
+        el.innerHTML = "";
+      });
+      var nightsText = plural(c.nights, "night") + " selected";
+      if (calPricing) {
+        calPricing.classList.add("is-on");
+        calPricing.innerHTML = "<strong>" + nightsText + "</strong> · exact total shown at Lodgify checkout before payment";
+      }
+      if (bookPrice) bookPrice.innerHTML = nightsText + " <span>· total shown before payment</span>";
+      if (persistMeta) persistMeta.innerHTML = "<strong>Oak Ridge</strong><span>" + nightsText + "</span>";
+      return;
+    }
 
     if (!c) {
       each(priceTargets, function (el) {
